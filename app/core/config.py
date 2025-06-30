@@ -22,7 +22,7 @@ class Configuration:
 
     # === Общие настройки ===
 
-    SCREENER_TYPE: ScreenerType = ScreenerType.RSI
+    SCREENER_TYPE: ScreenerType = ScreenerType.EMA
     """Тип скринера для торговли."""
 
     TRADEBOT_TYPE: TradebotType = TradebotType.BYBIT_FUTURES

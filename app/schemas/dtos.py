@@ -19,12 +19,6 @@ class SignalDTO:
     side: SignalSide
     """Сторона сигнала."""
 
-    prev_rsi: float
-    """RSI на одну свечу назад."""
-
-    curr_rsi: float
-    """RSI на текущий момент."""
-
     klines: list[KlineDict] = field(repr=False)
     """Список свечей которые были использованы для анализа."""
 

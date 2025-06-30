@@ -172,8 +172,6 @@ class RSIScreener(ABCScreener):
                     symbol=ticker,
                     side=signal_side,
                     klines=klines_lst,
-                    prev_rsi=prev_rsi,
-                    curr_rsi=curr_rsi,
                 )
             )
 

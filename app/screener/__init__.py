@@ -3,10 +3,12 @@ __all__ = ["ABCScreener", "SCREENER_MAPPER"]
 from app.schemas import ScreenerType
 
 from .abstract import ABCScreener
+from .ema import EMAScreener
 from .rsi import RSIScreener
 
 SCREENER_MAPPER: dict[ScreenerType, type[ABCScreener]] = {
     ScreenerType.RSI: RSIScreener,
+    ScreenerType.EMA: EMAScreener,
 }
 """Маппер скринеров по типу. При добавлении нового типа скринера нужно:
 1. Добавить его тип в ScreenerType
