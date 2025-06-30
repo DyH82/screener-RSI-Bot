@@ -27,10 +27,11 @@ class Manager:
 
     def _signal_callback(self, signal: SignalDTO) -> None:
         """Обработчик сигнала от скринера."""
-        logger.success(
-            f"Получен сигнал: {signal.symbol} {signal.side} {signal.prev_rsi} -> {signal.curr_rsi}"
-        )
-        Thread(target=self._tradebot.process_signal, args=(signal,), daemon=True).start()
+        if signal.side in config.ALLOWED_SIDES:  # Проверка на разрешенные стороны
+            logger.success(
+                f"Получен сигнал: {signal.symbol} {signal.side} {signal.prev_rsi} -> {signal.curr_rsi}"
+            )
+            Thread(target=self._tradebot.process_signal, args=(signal,), daemon=True).start()
 
 
 def main() -> None:

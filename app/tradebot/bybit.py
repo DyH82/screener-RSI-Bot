@@ -56,8 +56,9 @@ class BybitTradebot(ABCTradebot):
                 )
                 return
 
-            # Устанавливаем нужное торговое плечо
-            self._set_leverage(signal.symbol)
+            # Устанавливаем нужное торговое плечо если торгуем на фьючерсах
+            if self.CATEGORY == "linear":
+                self._set_leverage(signal.symbol)
 
             # Высчитываем цены и размеры
             quantity = self._calculate_quantity(signal.symbol, signal.last_price)

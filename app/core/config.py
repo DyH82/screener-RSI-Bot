@@ -5,13 +5,13 @@
 __all__ = ["config"]
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
 
-from app.schemas.enums import ScreenerType, TradebotType
+from app.schemas.enums import ScreenerType, SignalSide, TradebotType
 
 load_dotenv()
 
@@ -28,6 +28,11 @@ class Configuration:
     TRADEBOT_TYPE: TradebotType = TradebotType.BYBIT_FUTURES
     """Тип торгового бота."""
 
+    ALLOWED_SIDES: list[SignalSide] = field(
+        default_factory=lambda: [SignalSide.BUY, SignalSide.SELL]
+    )
+    """Стороны, на которые бот может торговать."""
+
     STOP_LOSS: float | None = 1
     """Размер стоп-лосса для торговли в %. Можно поставить 0 или None чтобы отключить стоп-лосс."""
 
@@ -40,7 +45,7 @@ class Configuration:
     USDT_QUANTITY: float = 100
     """Размер позиции в USDT. Это КОНЕЧНЫЙ размер позиции после плеча, т.е. маржа будет меньше, в зависимости от плеча."""
 
-    MAX_ALLOWED_POSITIONS: int = 10
+    MAX_ALLOWED_POSITIONS: int = 4
     """Максимальное количество открытых позиций одновременно."""
 
     # === Настройки скринера RSI ===
@@ -53,10 +58,10 @@ class Configuration:
     Доступные интервалы для Bybit Klines Websocket: 1 3 5 15 30 60 120 240 360 720 (min)
     """
 
-    RSI_SCREENER_LOWER_THRESHOLD: float = 30.0
+    RSI_SCREENER_LOWER_THRESHOLD: float = 20.0
     """Нижний порог для скринера RSI."""
 
-    RSI_SCREENER_UPPER_THRESHOLD: float = 70.0
+    RSI_SCREENER_UPPER_THRESHOLD: float = 80.0
     """Верхний порог для скринера RSI."""
 
     # === Настройки торговли на Bybit через API ===

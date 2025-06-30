@@ -41,7 +41,7 @@ class RSIScreener(ABCScreener):
 
         self._length: int = length
         self._increased_length: int = (
-            self._length * 20
+            self._length * 10
         )  # Увеличенная длинна данных для более точного вычисления RSI (Но снижает производительность)
         self._timeframe: int = timeframe
         self._lower_threshold: float = lower_threshold
@@ -86,7 +86,9 @@ class RSIScreener(ABCScreener):
             category=self.CATEGORY,
             symbol=symbol,
             interval=self._timeframe,
-            limit=self._increased_length,
+            limit=int(
+                self._increased_length * 1.5
+            ),  # Умножаем т.к. некоторые обьемы могут быть нулевыми
         )
         for k in reversed(klines_response["result"]["list"]):
             volume_usdt = float(k[6])
