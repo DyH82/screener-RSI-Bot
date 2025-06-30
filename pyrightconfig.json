@@ -1,5 +1,5 @@
 {
-  "include": ["src", "app"],
+  "include": ["app"],
   "exclude": [
     "**/node_modules",
     "**/__pycache__",
@@ -12,6 +12,6 @@
   "venv": ".venv",
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
-  "pythonVersion": "3.12",
+  "pythonVersion": "3.13",
   "typeCheckingMode": "basic"
 }
