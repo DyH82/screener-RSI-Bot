@@ -181,3 +181,29 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Виртуальное окружение
+.venv/
+venv/
+env/
+
+# Логи
+logs/
+*.log
+
+# Кэш Python
+__pycache__/
+*.pyc
+
+# Файлы IDE
+.idea/
+.vscode/
+
+# Переменные окружения (секреты)
+.env
+
+# Файлы, сгенерированные при запуске
+structure.txt
+combined.txt
+
+# Возможно, вы хотите исключить и другие файлы

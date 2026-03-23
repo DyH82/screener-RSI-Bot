@@ -20,32 +20,39 @@ load_dotenv()
 class Configuration:
     """Общий класс конфигурации."""
 
+    USE_DEMO: bool = os.getenv("USE_DEMO", "true").lower() == "true" # True – тестнет, False – реальный счет
+
     # === Общие настройки ===
 
     SCREENER_TYPE: ScreenerType = ScreenerType.RSI
     """Тип скринера для торговли."""
-
-    TRADEBOT_TYPE: TradebotType = TradebotType.BYBIT_FUTURES
+    # SCREENER_TYPE: ScreenerType = ScreenerType.EMA
+    # TRADEBOT_TYPE: TradebotType = TradebotType.BYBIT_FUTURES
     """Тип торгового бота."""
+
+    TRADEBOT_TYPE: TradebotType = TradebotType.BINGX_FUTURES
 
     ALLOWED_SIDES: list[SignalSide] = field(
         default_factory=lambda: [SignalSide.BUY, SignalSide.SELL]
     )
     """Стороны, на которые бот может торговать."""
 
+
     STOP_LOSS: float | None = 1
+    # STOP_LOSS: float | None = None
     """Размер стоп-лосса для торговли в %. Можно поставить 0 или None чтобы отключить стоп-лосс."""
 
-    TAKE_PROFIT: float | None = 2
+    TAKE_PROFIT: float | None = 5
+    # TAKE_PROFIT: float | None = None
     """Размер тейк-профита для торговли в %. Можно поставить 0 или None чтобы отключить тейк-профит."""
 
-    LEVERAGE: int | None = 10
+    LEVERAGE: int | None = 20
     """Торговое плечо для торговли. Можно поставить 0 или None чтобы отключить изменение плеча при обработке сигнала."""
 
-    USDT_QUANTITY: float = 100
+    USDT_QUANTITY: float = 500
     """Размер позиции в USDT. Это КОНЕЧНЫЙ размер позиции после плеча, т.е. маржа будет меньше, в зависимости от плеча."""
 
-    MAX_ALLOWED_POSITIONS: int = 4
+    MAX_ALLOWED_POSITIONS: int = 6
     """Максимальное количество открытых позиций одновременно."""
 
     # === Настройки скринера RSI ===
@@ -72,6 +79,9 @@ class Configuration:
     BYBIT_API_SECRET: str = os.getenv("API_SECRET", "")
     """Секретный ключ для торговли на Bybit через API."""
 
+    BINGX_API_KEY: str = os.getenv("BINGX_API_KEY", "")
+    BINGX_API_SECRET: str = os.getenv("BINGX_API_SECRET", "")
+
     # === Настройки логирования ===
 
     LOG_STDOUT_LEVEL: Literal["ERROR", "INFO", "DEBUG", "TRACE"] = "INFO"
@@ -82,6 +92,8 @@ class Configuration:
 
     LOG_FOLDER_PATH: Path = Path("logs")
     """Базовая директория для файлов логов."""
+
+    LOG_API_DETAILS: bool = False  # True – выводить полный JSON, False – краткий вывод
 
 
 config: Configuration = Configuration()
