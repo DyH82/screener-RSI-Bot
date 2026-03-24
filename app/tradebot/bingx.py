@@ -2,13 +2,13 @@ __all__ = ["BingxTradebot"]
 
 import json
 import time
-from typing import Literal
-
-import ccxt
-import requests
 import hashlib
 import hmac
-from ccxt.base.errors import ExchangeError, RateLimitExceeded
+from typing import Literal
+
+import requests
+import ccxt
+from ccxt.base.errors import RateLimitExceeded
 
 from app.core import config, logger
 from app.schemas import SignalDTO
@@ -31,6 +31,8 @@ class BingxTradebot(ABCTradebot):
         usdt_quantity: float = config.USDT_QUANTITY,
         use_demo: bool = config.USE_DEMO,
     ) -> None:
+        self.api_key = api_key
+        self.api_secret = api_secret
         self._take_profit = take_profit
         self._stop_loss = stop_loss
         self._leverage = leverage
@@ -38,27 +40,37 @@ class BingxTradebot(ABCTradebot):
         self._usdt_quantity = usdt_quantity
         self.use_demo = use_demo
 
-        # Инициализация CCXT
+        self.base_url = "https://open-api-vst.bingx.com" if use_demo else "https://open-api.bingx.com"
+
+        # CCXT для позиций и плеча
         self.exchange = ccxt.bingx({
             'apiKey': api_key,
             'secret': api_secret,
-            'options': {
-                'defaultType': 'swap',      # фьючерсы
-            },
+            'options': {'defaultType': 'swap'},
         })
         if use_demo:
             self.exchange.set_sandbox_mode(True)
+
+        # Получение информации о символах (точность, оригинальные имена)
+        self._exchange_info = BingxExchangeInfo()
+        self._exchange_info.start()
 
         # Кэш позиций
         self._positions_cache = None
         self._positions_cache_time = 0
         self._positions_cache_ttl = 5
 
-        # Получение информации о символах
-        self._exchange_info = BingxExchangeInfo()
-        self._exchange_info.start()
+    def _sign_request(self, params: dict) -> str:
+        """Создаёт подпись HMAC-SHA256 для параметров."""
+        query_string = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
+        return hmac.new(
+            self.api_secret.encode('utf-8'),
+            query_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
 
     def _get_positions(self) -> list[dict]:
+        """Получает открытые позиции через CCXT (с кэшированием)."""
         now = time.time()
         if self._positions_cache is not None and (now - self._positions_cache_time) < self._positions_cache_ttl:
             return self._positions_cache
@@ -68,11 +80,8 @@ class BingxTradebot(ABCTradebot):
             try:
                 positions = self.exchange.fetch_positions()
                 self._positions_cache = [
-                    {
-                        "symbol": pos["symbol"].replace("-", "").replace("/", ""),
-                        "side": pos["side"]
-                    }
-                    for pos in positions if float(pos["contracts"]) > 0
+                    {"symbol": p["symbol"].replace("-", "").replace("/", ""), "side": p["side"]}
+                    for p in positions if float(p["contracts"]) > 0
                 ]
                 self._positions_cache_time = now
                 return self._positions_cache
@@ -87,20 +96,14 @@ class BingxTradebot(ABCTradebot):
         return []
 
     def _set_leverage(self, symbol_clean: str) -> None:
+        """Устанавливает плечо через CCXT."""
         if not self._leverage:
-            logger.debug(f"Плечо на {symbol_clean} не меняем")
             return
-
         symbol_original = self._exchange_info.get_original_symbol(symbol_clean)
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                # CCXT требует side в параметрах
-                self.exchange.set_leverage(
-                    self._leverage,
-                    symbol_original,
-                    {'side': 'LONG'}
-                )
+                self.exchange.set_leverage(self._leverage, symbol_original, {'side': 'LONG'})
                 logger.info(f"Плечо на {symbol_original} установлено на {self._leverage}X")
                 return
             except RateLimitExceeded:
@@ -113,82 +116,90 @@ class BingxTradebot(ABCTradebot):
         logger.error(f"Failed to set leverage for {symbol_original} after retries")
 
     def _place_market_order(
-        self,
-        symbol_clean: str,
-        quantity: float,
-        side: SignalSide,
-        stop_loss: float | None,
-        take_profit: float | None,
+            self,
+            symbol_clean: str,
+            quantity: float,
+            side: SignalSide,
+            stop_loss: float | None,
+            take_profit: float | None,
     ) -> None:
-        """Размещает рыночный ордер (без TP/SL) и при необходимости отдельно устанавливает TP/SL."""
+        """Размещает рыночный ордер с TP/SL через прямой запрос к API (числа, не строки)."""
         symbol_original = self._exchange_info.get_original_symbol(symbol_clean)
-        side_str = "buy" if side == SignalSide.BUY else "sell"
+        endpoint = "/openApi/swap/v2/trade/order"
 
-        # Параметры ордера (без TP/SL)
+        # Базовые параметры (числа, не строки)
         params = {
+            "symbol": symbol_original,
+            "side": side.value.upper(),
             "positionSide": "LONG" if side == SignalSide.BUY else "SHORT",
+            "type": "MARKET",
+            "quantity": quantity,  # число
+            "recvWindow": 5000,  # число
+            "timestamp": int(time.time() * 1000),  # число
         }
 
-        try:
-            order = self.exchange.create_order(
-                symbol=symbol_original,
-                type='market',
-                side=side_str,
-                amount=quantity,
-                price=None,
-                params=params,
-            )
-            # Красивый вывод
-            logger.info(
-                f"[{symbol_clean}:{side}] Ордер {order.get('id')} исполнен: "
-                f"цена={order.get('avgPrice')}, кол-во={order.get('filled')}"
-            )
-            if config.LOG_API_DETAILS:
-                logger.debug(f"Полный ответ: {order}")
-
-            # После создания ордера устанавливаем TP/SL отдельным запросом (только на реальном счете)
-            if (stop_loss or take_profit) and not self.use_demo:
-                position_id = order.get('id')
-                if position_id:
-                    self._set_tp_sl(symbol_original, position_id, take_profit, stop_loss)
-                else:
-                    logger.warning(f"[{symbol_clean}:{side}] Не удалось получить positionId для TP/SL")
-
-        except Exception as e:
-            logger.error(f"Ошибка при создании ордера: {e}")
-            raise
-
-    def _set_tp_sl(self, symbol: str, position_id: str, take_profit: float | None, stop_loss: float | None) -> None:
-        """Установка TP/SL через endpoint /openApi/swap/v2/trade/tpSlOrder."""
-        endpoint = "/openApi/swap/v2/trade/tpSlOrder"
-        params = {
-            "positionId": position_id,
-            "recvWindow": "5000",
-            "timestamp": str(int(time.time() * 1000)),
-        }
+        # Добавляем TP/SL как JSON-строки, но внутри числа (не строки)
         if take_profit is not None:
-            params["takeProfitPrice"] = str(take_profit)
+            params["takeProfit"] = json.dumps({
+                "type": "TAKE_PROFIT_MARKET",
+                "stopPrice": take_profit,  # число
+                "price": take_profit,  # число
+                "workingType": "MARK_PRICE"
+            })
         if stop_loss is not None:
-            params["stopLossPrice"] = str(stop_loss)
+            params["stopLoss"] = json.dumps({
+                "type": "STOP_MARKET",
+                "stopPrice": stop_loss,  # число
+                "price": stop_loss,  # число
+                "workingType": "MARK_PRICE"
+            })
 
-        # Подпись
+        # Формируем подпись (сортировка ключей)
         sorted_keys = sorted(params.keys())
         query_string = "&".join([f"{k}={params[k]}" for k in sorted_keys])
-        signature = hmac.new(
-            self.exchange.secret.encode('utf-8'),
-            query_string.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        url = f"{self.exchange.urls['api']}{endpoint}?{query_string}&signature={signature}"
-        headers = {"X-BX-APIKEY": self.exchange.apiKey}
+        signature = self._sign_request({k: params[k] for k in sorted_keys})
+        url = f"{self.base_url}{endpoint}?{query_string}&signature={signature}"
+        headers = {"X-BX-APIKEY": self.api_key}
+
         try:
             response = requests.post(url, headers=headers)
             data = response.json()
             if data.get("code") != 0:
                 raise Exception(f"Bingx API error: {data}")
-            logger.info(f"Установлены TP/SL для позиции {position_id}: {data}")
+            order_data = data.get("data", {}).get("order", {})
+            logger.info(
+                f"[{symbol_clean}:{side}] Ордер {order_data.get('orderId')} исполнен: "
+                f"цена={order_data.get('avgPrice')}, кол-во={order_data.get('executedQty')}"
+            )
+            if config.LOG_API_DETAILS:
+                logger.debug(f"Полный ответ: {data}")
         except Exception as e:
-            logger.error(f"Ошибка при установке TP/SL для позиции {position_id}: {e}")
+            logger.error(f"Ошибка при создании ордера: {e}")
+            raise
+
+        # Формируем подпись (параметры сортируем, добавляем recvWindow)
+        params["recvWindow"] = "5000"
+        sorted_keys = sorted(params.keys())
+        query_string = "&".join([f"{k}={params[k]}" for k in sorted_keys])
+        signature = self._sign_request({k: params[k] for k in sorted_keys})
+        url = f"{self.base_url}{endpoint}?{query_string}&signature={signature}"
+        headers = {"X-BX-APIKEY": self.api_key}
+
+        try:
+            response = requests.post(url, headers=headers)
+            data = response.json()
+            if data.get("code") != 0:
+                raise Exception(f"Bingx API error: {data}")
+            order_data = data.get("data", {}).get("order", {})
+            logger.info(
+                f"[{symbol_clean}:{side}] Ордер {order_data.get('orderId')} исполнен: "
+                f"цена={order_data.get('avgPrice')}, кол-во={order_data.get('executedQty')}"
+            )
+            if config.LOG_API_DETAILS:
+                logger.debug(f"Полный ответ: {data}")
+        except Exception as e:
+            logger.error(f"Ошибка при создании ордера: {e}")
+            raise
 
     def _calculate_tp_price(self, symbol: str, last_price: float, side: SignalSide) -> float | None:
         if not self._take_profit:
