@@ -216,26 +216,35 @@ class StatsCollector:
 
         breakdown = {}
         for period_name, (start_hour, end_hour) in periods.items():
-            period_trades = []
             period_pnl = 0.0
             period_count = 0
+            period_win = 0
+            period_loss = 0
+            sum_win = 0.0
+            sum_loss = 0.0
             for trade in self.trades:
                 if trade.close_time is None:
                     continue
                 hour = trade.close_time.hour
                 if start_hour <= hour < end_hour:
-                    period_trades.append(trade)
-                    period_pnl += trade.pnl_usdt
                     period_count += 1
-            breakdown[period_name] = (period_count, period_pnl)
+                    period_pnl += trade.pnl_usdt
+                    if trade.pnl_usdt > 0:
+                        period_win += 1
+                        sum_win += trade.pnl_usdt
+                    else:
+                        period_loss += 1
+                        sum_loss += trade.pnl_usdt
+            breakdown[period_name] = (period_count, period_win, period_loss, period_pnl, sum_win, abs(sum_loss))
 
-        print("\n" + "="*50)
+        print("\n" + "="*70)
         print("📊 ПРИБЫЛЬ/УБЫТОК ПО ВРЕМЕНИ СУТОК")
-        print("="*50)
-        for period_name, (count, pnl) in breakdown.items():
+        print("="*70)
+        for period_name, (count, win, loss, pnl, sum_win, sum_loss) in breakdown.items():
             avg = pnl / count if count else 0
-            print(f"{period_name:<25} | Сделок: {count:3} | PnL: {pnl:+.2f} USDT | Средняя: {avg:+.2f}")
-        print("="*50)
+            win_rate = (win / count * 100) if count else 0
+            print(f"{period_name:<25} | Всего: {count:3} | Прибыльных: {win:3} ({win_rate:5.1f}%) | Сумма прибыли: {sum_win:8.2f} | Убыточных: {loss:3} | Сумма убытка: {sum_loss:8.2f} | PnL: {pnl:+.2f} | Средняя: {avg:+.2f}")
+        print("="*70)
 
     def reset(self):
         self.trades.clear()
