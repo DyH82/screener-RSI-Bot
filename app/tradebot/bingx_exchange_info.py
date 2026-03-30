@@ -63,3 +63,36 @@ class BingxExchangeInfo(ABCExchangeInfo):
         if original == clean_symbol:
             logger.warning(f"Symbol {clean_symbol} not found in original_symbols, using as is")
         return original
+
+    @classmethod
+    def fetch_klines(cls, symbol: str, interval: str, limit: int = 100) -> list[dict]:
+        """Получает свечи с BingX (публичный API, без авторизации)."""
+        base_url = cls._get_base_url()
+        url = f"{base_url}/openApi/swap/v2/quote/klines"
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit,
+        }
+        try:
+            resp = requests.get(url, params=params, timeout=10)
+            data = resp.json()
+            if data.get("code") != 0:
+                logger.error(f"Ошибка получения свечей {symbol}: {data}")
+                return []
+            klines_raw = data.get("data", [])
+            # Приводим к единому формату (от старых к новым)
+            klines = []
+            for k in reversed(klines_raw):
+                klines.append({
+                    't': int(k['time']),
+                    'o': float(k['open']),
+                    'h': float(k['high']),
+                    'l': float(k['low']),
+                    'c': float(k['close']),
+                    'v': float(k.get('volume', 0)),
+                })
+            return klines
+        except Exception as e:
+            logger.error(f"Ошибка при запросе свечей {symbol}: {e}")
+            return []

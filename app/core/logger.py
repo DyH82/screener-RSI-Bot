@@ -3,7 +3,7 @@ __all__ = [
 ]
 
 import sys
-
+import logging
 from loguru import logger
 
 from .config import config
@@ -33,3 +33,5 @@ logger.add(
     encoding="utf-8",
     enqueue=False,
 )
+
+logging.getLogger("pybit").setLevel(logging.WARNING)
