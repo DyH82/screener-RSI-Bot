@@ -115,10 +115,11 @@ class BingxTradebot(ABCTradebot):
                 now - self._positions_cache_time) < self._positions_cache_ttl:
             return self._positions_cache
 
+        positions = []  # <-- добавляем эту строку
         endpoint = "/openApi/swap/v2/user/positions"
         params = {
             "timestamp": int(time.time() * 1000),
-            "recvWindow": 5000,
+            "recvWindow": 10000,
         }
         sorted_keys = sorted(params.keys())
         query_string = "&".join([f"{k}={params[k]}" for k in sorted_keys])
@@ -131,10 +132,6 @@ class BingxTradebot(ABCTradebot):
             try:
                 response = requests.get(url, headers=headers)
                 data = response.json()
-                # Логируем
-                if data.get("data"):
-                    logger.debug(f"Sample position keys: {list(data['data'][0].keys())}")
-                    logger.debug(f"Sample position: {data['data'][0]}")
                 if data.get("code") != 0:
                     raise Exception(f"Bingx API error: {data}")
                 positions = data.get("data", [])
@@ -142,10 +139,11 @@ class BingxTradebot(ABCTradebot):
                     {
                         "symbol": p["symbol"].replace("-", ""),
                         "side": p.get("positionSide", "").lower(),
-                        "entry_price": float(p.get("entryPrice", 0)),
+                        "entry_price": float(p.get("avgPrice", 0)),
                         "quantity": float(p.get("positionAmt", 0)),
-                        "tp_price": float(p.get("takeProfit", 0)),
-                        "sl_price": float(p.get("stopLoss", 0)),
+                        "tp_price": 0.0,
+                        "sl_price": 0.0,
+                        "leverage": int(p.get("leverage", config.LEVERAGE or 1)),
                     }
                     for p in positions if float(p.get("positionAmt", 0)) > 0
                 ]
@@ -211,7 +209,7 @@ class BingxTradebot(ABCTradebot):
             "positionSide": "LONG" if side == SignalSide.BUY else "SHORT",
             "type": "MARKET",
             "quantity": quantity,
-            "recvWindow": 5000,
+            "recvWindow": 10000,
             "timestamp": int(time.time() * 1000),
         }
 
@@ -232,17 +230,23 @@ class BingxTradebot(ABCTradebot):
                 "reduceOnly": True,
             })
 
+        logger.debug(f"Params before signature: {params}")
+
         sorted_keys = sorted(params.keys())
         query_string = "&".join([f"{k}={params[k]}" for k in sorted_keys])
         signature = self._sign_request({k: params[k] for k in sorted_keys})
         url = f"{self.base_url}{endpoint}?{query_string}&signature={signature}"
         headers = {"X-BX-APIKEY": self.api_key}
 
+        logger.debug(f"Request URL: {url}")
+        logger.debug(f"Request params: {params}")
+
         max_retries = 3
         for attempt in range(max_retries):
             try:
                 response = requests.post(url, headers=headers)
                 data = response.json()
+                logger.debug(f"Response data: {data}")
                 if data.get("code") != 0:
                     if data.get("code") == 109400 and attempt < max_retries - 1:
                         wait = 60
@@ -284,13 +288,14 @@ class BingxTradebot(ABCTradebot):
     def check_closed_positions(self):
         if not self.stats:
             return
-
+        logger.debug("Проверка закрытых позиций...")
         try:
             positions = self._get_positions(use_cache=False)
         except Exception as e:
             logger.error(f"Ошибка при получении позиций для статистики: {e}")
             return
-
+        logger.debug(f"Текущие позиции: {[(p['symbol'], p['side']) for p in positions]}")
+        logger.debug(f"Открытые сделки в статистике: {list(self.stats.open_trades.keys())}")
         current_keys = {(p["symbol"], p["side"]) for p in positions}
         now = time.time()
 
@@ -333,12 +338,16 @@ class BingxTradebot(ABCTradebot):
             balance = self._get_balance()
             if balance > 0:
                 nominal = balance * (config.RISK_PERCENT / 100.0)
-                qty = nominal / last_price
             else:
-                logger.warning("Не удалось получить баланс, использую USDT_QUANTITY")
-                qty = self._usdt_quantity / last_price
+                nominal = self._usdt_quantity
         else:
-            qty = self._usdt_quantity / last_price
+            nominal = self._usdt_quantity
+            # Проверка лимита номинала
+        if nominal > config.MAX_POSITION_NOMINAL:
+            logger.warning(f"Номинал {nominal:.2f} USDT превышает лимит {config.MAX_POSITION_NOMINAL}, уменьшаем")
+            nominal = config.MAX_POSITION_NOMINAL
+
+        qty = nominal / last_price
         return self._exchange_info.round_quantity(symbol, qty)
 
     def _check_positions_status(self, symbol: str) -> bool:
@@ -354,7 +363,7 @@ class BingxTradebot(ABCTradebot):
             return True
 
     def process_signal(self, signal: SignalDTO) -> None:
-        repr = f"[{signal.symbol}:{signal.side}]"
+        repr = f"[{signal.symbol}:{signal.side}]"  # <-- эта строка должна быть первой
         try:
             logger.info(f"{repr} Начинаю обработку сигнала")
 

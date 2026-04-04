@@ -100,9 +100,61 @@ class Manager:
             if self.stats:
                 self.stats.print_summary()
 
+    def print_config_info(self):
+        """Выводит текущие настройки из config.py."""
+        from app.core import config
+        print("\n" + "=" * 60)
+        print("📋 ТЕКУЩИЕ НАСТРОЙКИ КОНФИГУРАЦИИ")
+        print("=" * 60)
+        print(f"🔹 Биржа: {'ДЕМО (тестнет)' if config.USE_DEMO else 'РЕАЛ'}")
+        print(f"🔹 Тип трейдбота: {config.TRADEBOT_TYPE.value}")
+        print(f"🔹 Скринер: {config.SCREENER_TYPE.value.upper()}")
+        print(f"🔹 Режим инверсии: {'ВКЛЮЧЁН' if config.INVERT_SIGNALS else 'ОТКЛЮЧЁН'}")
+        print(f"🔹 Макс. символов для сканирования: {config.MAX_SYMBOLS}")
+
+        print("\n📊 УПРАВЛЕНИЕ РИСКАМИ:")
+        print(f"   Стоп-лосс: {config.STOP_LOSS}%")
+        print(f"   Тейк-профит: {config.TAKE_PROFIT}%")
+        print(f"   Плечо: {config.LEVERAGE}x")
+        print(f"   Размер позиции: {config.USDT_QUANTITY} USDT")
+        print(f"   Макс. позиций: {config.MAX_ALLOWED_POSITIONS}")
+        print(
+            f"   Процент от баланса: {'ДА' if config.USE_PERCENT_OF_BALANCE else 'НЕТ'} (риск: {config.RISK_PERCENT}%)")
+
+        print("\n📈 НАСТРОЙКИ RSI:")
+        print(f"   Период: {config.RSI_SCREENER_LENGTH}")
+        print(f"   Таймфрейм: {config.RSI_SCREENER_TIMEFRAME} мин")
+        print(f"   Нижний порог: {config.RSI_SCREENER_LOWER_THRESHOLD}")
+        print(f"   Верхний порог: {config.RSI_SCREENER_UPPER_THRESHOLD}")
+
+        print("\n📊 НАСТРОЙКИ EMA:")
+        print(f"   Короткий период: {config.EMA_SCREENER_SHORT_PERIOD}")
+        print(f"   Длинный период: {config.EMA_SCREENER_LONG_PERIOD}")
+        print(f"   Таймфрейм: {config.EMA_SCREENER_TIMEFRAME} мин")
+
+        print("\n📊 ПОДТВЕРЖДЕНИЕ СИГНАЛОВ (EMA + RSI):")
+        print(f"   Использовать RSI подтверждение: {'ДА' if config.USE_RSI_CONFIRMATION else 'НЕТ'}")
+        if config.USE_RSI_CONFIRMATION:
+            print(f"   Период RSI: {config.RSI_CONFIRMATION_PERIOD}")
+            print(f"   Порог: {config.RSI_CONFIRMATION_THRESHOLD} (выше -> BUY, ниже -> SELL)")
+
+        print("\n🔍 ФИЛЬТРЫ СКРИНЕРА:")
+        print(f"   Уровни поддержки/сопротивления: {'✅ ВКЛ' if config.USE_SUPPORT_RESISTANCE else '❌ ВЫКЛ'}")
+        print(f"   Дивергенция RSI: {'✅ ВКЛ' if config.USE_RSI_DIVERGENCE else '❌ ВЫКЛ'}")
+        print(f"   Свечные паттерны: {'✅ ВКЛ' if config.USE_CANDLE_PATTERNS else '❌ ВЫКЛ'}")
+        print(f"   Фильтр объёма: {'✅ ВКЛ' if config.USE_VOLUME_FILTER else '❌ ВЫКЛ'}")
+        if config.USE_VOLUME_FILTER:
+            print(f"      Множитель: {config.VOLUME_MULTIPLIER}")
+            print(f"      Период: {config.VOLUME_PERIOD}")
+
+        print("\n📝 ЛОГИРОВАНИЕ И СТАТИСТИКА:")
+        print(f"   Уровень логов: {config.LOG_STDOUT_LEVEL}")
+        print(f"   Статистика: {'✅ ВКЛ' if config.STATS_ENABLED else '❌ ВЫКЛ'}")
+        print(f"   CSV-файл: {config.STATS_CSV_PATH}")
+        print("=" * 60)
     def _command_loop(self):
         print("\n" + "="*50)
-        print("Доступные команды: stats, stats time, reset stats, balance, exit")
+        print("Доступные команды: stats, stats time, reset stats, balance, info, exit")
         print("="*50 + "\n", flush=True)
         while True:
             try:
@@ -130,6 +182,8 @@ class Manager:
                         print(f"💰 Доступный баланс USDT: {balance:.2f}")
                     else:
                         print("Метод get_balance не поддерживается")
+                elif cmd == 'info':
+                    self.stats.print_config_info()
                 elif cmd == 'exit':
                     break
             except (EOFError, KeyboardInterrupt):

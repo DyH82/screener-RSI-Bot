@@ -18,12 +18,12 @@ class RSIScreener(ABCScreener):
     CATEGORY: Literal["linear", "spot"] = "linear"
 
     def __init__(
-        self,
-        callback: Callable[[SignalDTO], None],
-        length: int = config.RSI_SCREENER_LENGTH,
-        timeframe: int = config.RSI_SCREENER_TIMEFRAME,
-        lower_threshold: float = config.RSI_SCREENER_LOWER_THRESHOLD,
-        upper_threshold: float = config.RSI_SCREENER_UPPER_THRESHOLD,
+            self,
+            callback: Callable[[SignalDTO], None],
+            length: int = config.RSI_SCREENER_LENGTH,
+            timeframe: int = config.RSI_SCREENER_TIMEFRAME,
+            lower_threshold: float = config.RSI_SCREENER_LOWER_THRESHOLD,
+            upper_threshold: float = config.RSI_SCREENER_UPPER_THRESHOLD,
     ) -> None:
         super().__init__(callback)
         self._length = length
@@ -31,58 +31,72 @@ class RSIScreener(ABCScreener):
         self._lower_threshold = lower_threshold
         self._upper_threshold = upper_threshold
         self._needed_klines = length * 10
-        self._klines: dict[str, deque[KlineDict]] = defaultdict(
-            lambda: deque(maxlen=self._needed_klines)
-        )
+        self._klines: dict[str, deque[KlineDict]] = {}
         self._symbols = []
 
+        # Настройки фильтров
+        self._use_volume_filter = getattr(config, 'USE_VOLUME_FILTER', False)
+        self._volume_multiplier = getattr(config, 'VOLUME_MULTIPLIER', 1.5)
+        self._volume_period = getattr(config, 'VOLUME_PERIOD', 10)
+
     def run(self) -> None:
-        logger.info(f"Скринер {self.__class__.__name__} запущен (данные BingX)")
+        logger.info(f"Скринер {self.__class__.__name__} запущен (REST BingX)")
+        if self._use_volume_filter:
+            logger.info(f"Фильтр объёма ВКЛЮЧЁН: множитель={self._volume_multiplier}, период={self._volume_period}")
         self._symbols = self._get_tickers_list()
         if not self._symbols:
             logger.error("Не удалось получить список символов")
             return
+        logger.info(f"Отслеживаем {len(self._symbols)} символов")
 
-        # Предварительно загружаем историю
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            executor.map(self._pre_fill_klines, self._symbols)
+        # Инициализация очередей и предзагрузка истории
+        for symbol in self._symbols:
+            self._klines[symbol] = deque(maxlen=self._needed_klines)
+            self._pre_fill_klines(symbol)
+            time.sleep(0.5)
 
-        # Цикл опроса
         interval_seconds = self._timeframe * 60
         while True:
-            time.sleep(interval_seconds)
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                executor.map(self._update_klines, self._symbols)
+            start_time = time.time()
+            for symbol in self._symbols:
+                self._update_klines(symbol)
+                time.sleep(0.1)
+            elapsed = time.time() - start_time
+            if elapsed < interval_seconds:
+                time.sleep(interval_seconds - elapsed)
 
     def _pre_fill_klines(self, symbol: str) -> None:
         klines = BingxExchangeInfo.fetch_klines(
             symbol, self._interval_to_str(self._timeframe), self._needed_klines
         )
         if klines:
-            self._klines[symbol] = deque(klines, maxlen=self._needed_klines)
+            self._klines[symbol].extend(klines)
             logger.debug(f"Загружено {len(klines)} свечей для {symbol}")
         else:
             logger.warning(f"Не удалось загрузить историю для {symbol}")
 
     def _update_klines(self, symbol: str) -> None:
-        """Загружает последние свечи и обновляет очередь."""
         klines = BingxExchangeInfo.fetch_klines(
             symbol, self._interval_to_str(self._timeframe), 2
         )
         if not klines:
             return
-        # klines уже от старых к новым, берём последнюю (закрытую)
-        new_kline = klines[-1]
-        current = self._klines[symbol]
-        if current and current[-1]['t'] == new_kline['t']:
+        if len(klines) < 2:
             return
-        current.append(new_kline)
+        closed_candle = klines[-2]
+        current = self._klines.get(symbol)
+        if current is None:
+            return
+        if current and current[-1]['t'] == closed_candle['t']:
+            return
+        current.append(closed_candle)
+        logger.debug(
+            f"✅ Новая свеча для {symbol}: close={closed_candle['c']}, время={closed_candle['t']}, очередь={len(current)}")
         if len(current) >= self._length + 1:
             self._process_klines_queue(symbol, current)
 
     @staticmethod
     def _interval_to_str(minutes: int) -> str:
-        """Преобразует минуты в строку интервала BingX."""
         if minutes == 1:
             return "1m"
         elif minutes == 5:
@@ -104,14 +118,33 @@ class RSIScreener(ABCScreener):
         else:
             return f"{minutes}m"
 
+    def _check_volume_filter(self, klines: deque[KlineDict]) -> bool:
+        """Проверяет, превышает ли текущий объём средний."""
+        if not self._use_volume_filter:
+            return True
+
+        if len(klines) < self._volume_period:
+            return True
+
+        volumes = [k["v"] for k in list(klines)[-self._volume_period:]]
+        avg_volume = sum(volumes) / len(volumes)
+        current_volume = klines[-1]["v"]
+
+        result = current_volume > avg_volume * self._volume_multiplier
+        if not result:
+            logger.debug(
+                f"Фильтр объёма: текущий={current_volume:.2f}, средний={avg_volume:.2f}, множитель={self._volume_multiplier}")
+        return result
+
     def _process_klines_queue(self, ticker: str, klines: deque[KlineDict]) -> None:
-        """Расчёт RSI и отправка сигнала."""
         if len(klines) < self._length + 1:
             return
         klines_lst = list(klines)
         curr_rsi = self._calculate_rsi(klines_lst, self._length)
         prev_rsi = self._calculate_rsi(klines_lst[:-1], self._length)
-        logger.debug(f"Kline for {ticker} is closed: {curr_rsi=}, {prev_rsi=}")
+
+        logger.info(
+            f"📊 {ticker}: prev_rsi={prev_rsi:.1f}, curr_rsi={curr_rsi:.1f}, lower={self._lower_threshold}, upper={self._upper_threshold}")
 
         signal_side = None
         if prev_rsi < self._lower_threshold < curr_rsi:
@@ -120,33 +153,28 @@ class RSIScreener(ABCScreener):
             signal_side = SignalSide.SELL
 
         if signal_side:
+            if not self._check_volume_filter(klines):
+                logger.info(f"🔇 {ticker}: сигнал {signal_side.value} отфильтрован по объёму")
+                return
+            logger.info(f"🔔 СИГНАЛ {ticker}: {signal_side.value}")
             self._callback(SignalDTO(symbol=ticker, side=signal_side, klines=klines_lst))
 
     def _get_tickers_list(self) -> list[str]:
-        """Возвращает список активных фьючерсных символов с BingX, исключая экзотические пары."""
         for _ in range(100):
             if BingxExchangeInfo.original_symbols:
                 break
             time.sleep(0.1)
         if not BingxExchangeInfo.original_symbols:
-            logger.error("Не удалось получить список символов от Bingx")
+            logger.error("Не удалось получить список символов BingX")
             return []
         all_symbols = list(BingxExchangeInfo.original_symbols.values())
         if self.ONLY_USDT:
-            filtered = []
-            for s in all_symbols:
-                if not s.endswith("-USDT"):
-                    continue
-                # Исключаем товарные и индексные пары
-                if s.startswith(("NCS", "NCCO", "NCFX")):
-                    continue
-                filtered.append(s)
-            return filtered
-        return all_symbols
+            all_symbols = [s for s in all_symbols if s.endswith("-USDT")]
+        max_symbols = getattr(config, 'MAX_SYMBOLS', 200)
+        return all_symbols[:max_symbols]
 
     @staticmethod
     def _calculate_rsi(klines: list[KlineDict], period: int) -> float:
-        """Вычисляет RSI по списку свечей."""
         def rma(values: list[float], period: int) -> list[float]:
             result = []
             avg = sum(values[:period]) / period
