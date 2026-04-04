@@ -78,7 +78,7 @@ class BingxTradebot(ABCTradebot):
         endpoint = "/openApi/swap/v3/user/balance"
         params = {
             "timestamp": int(time.time() * 1000),
-            "recvWindow": 5000,
+            "recvWindow": 10000,
         }
         sorted_keys = sorted(params.keys())
         query_string = "&".join([f"{k}={params[k]}" for k in sorted_keys])
@@ -253,6 +253,10 @@ class BingxTradebot(ABCTradebot):
                         logger.warning(f"API временно отключён (109400), повторная попытка через {wait} сек...")
                         time.sleep(wait)
                         continue
+                    if data.get("code") == 100421:
+                        logger.warning(
+                            f"[{symbol_clean}:{side}] Пара временно недоступна для торговли (100421), пропускаем")
+                        return
                     raise Exception(f"Bingx API error: {data}")
                 order_data = data.get("data", {}).get("order", {})
                 logger.info(
