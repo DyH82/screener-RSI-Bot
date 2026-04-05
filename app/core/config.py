@@ -33,7 +33,7 @@ class Configuration:
     USDT_QUANTITY: float = 500
     MAX_ALLOWED_POSITIONS: int = 10
     MAX_POSITION_NOMINAL: float = 5000.0
-    MAX_SYMBOLS: int = 500
+    MAX_SYMBOLS: int = 540
 
     # ==================== ФИЛЬТРЫ СКРИНЕРА ====================
     # Фильтр объёма
@@ -62,6 +62,9 @@ class Configuration:
     USE_EMA_SPREAD_FILTER: bool = True  # включить фильтр спреда
     MIN_EMA_SPREAD_PERCENT: float = 0.08  # минимум 0.15% расхождения
 
+    # ========== ФИЛЬТР ГЛОБАЛЬНОГО ТРЕНДА ==========
+    USE_TREND_FILTER: bool = True  # включить фильтр EMA 99
+
     # ==================== НАСТРОЙКИ RSI ====================
     RSI_SCREENER_LENGTH: int = 9
     RSI_SCREENER_TIMEFRAME: int = 5
@@ -75,6 +78,9 @@ class Configuration:
     EMA_SCREENER_TIMEFRAME: int = 3
 
     # ==================== НАСТРОЙКИ MACD ====================
+    # ========== НАСТРОЙКИ MACD ФИЛЬТРА ==========
+    USE_MACD_FILTER: bool = True  # Включить фильтр MACD
+    MIN_MACD: float = 0.0005  # Минимальное значение MACD для сигнала
     MACD_FAST_PERIOD: int = 12
     MACD_SLOW_PERIOD: int = 26
     MACD_SIGNAL_PERIOD: int = 9
@@ -105,7 +111,7 @@ class Configuration:
     RISK_PERCENT: float = 1.5
 
     # ==================== ИНВЕРСИЯ СИГНАЛОВ ====================
-    INVERT_SIGNALS: bool = False
+    INVERT_SIGNALS: bool = True
 
 
 config: Configuration = Configuration()

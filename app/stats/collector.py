@@ -297,6 +297,10 @@ class StatsCollector:
         if config.USE_VOLUME_FILTER:
             print(f"      Множитель: {config.VOLUME_MULTIPLIER}")
             print(f"      Период: {config.VOLUME_PERIOD}")
+        print(
+            f"   MACD фильтр (минимальное значение): {'✅ ВКЛ' if getattr(config, 'USE_MACD_FILTER', True) else '❌ ВЫКЛ'}")
+        if getattr(config, 'USE_MACD_FILTER', True):
+            print(f"      Минимальный MACD: {getattr(config, 'MIN_MACD', 0.0005)}")
         print(f"   ATR фильтр (боковик): {'✅ ВКЛ' if config.USE_ATR_FILTER else '❌ ВЫКЛ'}")
         if config.USE_ATR_FILTER:
             print(f"      Порог ATR: {config.ATR_THRESHOLD}")
